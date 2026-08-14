@@ -1,206 +1,20 @@
 import streamlit as st
 import primer3
 import requests
-import time
-import re
-
-# ---------------------------------------------------------
-# PAGE CONFIGURATION
-# ---------------------------------------------------------
-
-st.set_page_config(
-    page_title="Primer Designer",
-    page_icon="🧬",
-    layout="centered"
-)
-
-# ---------------------------------------------------------
-# TITLE
-# ---------------------------------------------------------
-
-st.title("🧬 Primer Designer")
-
-st.write(
-    "Design PCR primers from a DNA sequence using Primer3 "
-    "and check primer specificity using NCBI BLAST."
-)
-
-st.divider()
-
-# ---------------------------------------------------------
-# DNA SEQUENCE INPUT
-# ---------------------------------------------------------
-
-st.subheader("1. Enter DNA Sequence")
-
-sequence = st.text_area(
-    "DNA sequence",
-    placeholder="Example: ATGCGTACGATCGATCGATCG...",
-    height=180
-)
-
-# Clean sequence
-clean_sequence = re.sub(r"\s+", "", sequence).upper()
-
-# ---------------------------------------------------------
-# VALIDATE DNA
-# ---------------------------------------------------------
-
-if clean_sequence:
-
-    invalid_bases = set(clean_sequence) - set("ATGC")
-
-    if invalid_bases:
-        st.error(
-            "Invalid DNA sequence. Please use only A, T, G and C."
-        )
-
-    elif len(clean_sequence) < 50:
-        st.warning(
-            "The DNA sequence is very short. "
-            "For reliable primer design, use a longer sequence."
-        )
-
-# ---------------------------------------------------------
-# PRIMER PARAMETERS
-# ---------------------------------------------------------
-
-st.subheader("2. Primer Parameters")
-
-col1, col2 = st.columns(2)
-
-with col1:
-
-    min_size = st.number_input(
-        "Minimum primer length",
-        min_value=15,
-        max_value=30,
-        value=18,
-        step=1
-    )
-
-    opt_size = st.number_input(
-        "Optimal primer length",
-        min_value=15,
-        max_value=30,
-        value=20,
-        step=1
-    )
-
-    max_size = st.number_input(
-        "Maximum primer length",
-        min_value=18,
-        max_value=35,
-        value=25,
-        step=1
-    )
-
-    min_gc = st.number_input(
-        "Minimum GC %",
-        min_value=0.0,
-        max_value=100.0,
-        value=40.0,
-        step=1.0
-    )
-
-    max_gc = st.number_input(
-        "Maximum GC %",
-        min_value=0.0,
-        max_value=100.0,
-        value=60.0,
-        step=1.0
-    )
-
-with col2:
-
-    min_tm = st.number_input(
-        "Minimum Tm (°C)",
-        min_value=40.0,
-        max_value=70.0,
-        value=57.0,
-        step=0.5
-    )
-
-    opt_tm = st.number_input(
-        "Optimal Tm (°C)",
-        min_value=40.0,
-        max_value=70.0,
-        value=60.0,
-        step=0.5
-    )
-
-    max_tm = st.number_input(
-        "Maximum Tm (°C)",
-        min_value=40.0,
-        max_value=75.0,
-        value=63.0,
-        step=0.5
-    )
-
-    min_product = st.number_input(
-        "Minimum product size",
-        min_value=50,
-        max_value=1000,
-        value=100,
-        step=10
-    )
-
-    max_product = st.number_input(
-        "Maximum product size",
-        min_value=100,
-        max_value=2000,
-        value=500,
-        step=10
-    )
-
-st.divider()
-
-# ---------------------------------------------------------
-# PRIMER DESIGN FUNCTION
-# ---------------------------------------------------------
-
-def design_primers(dna_sequence):
-
-    seq_args = {
-        "SEQUENCE_ID": "Target_DNA",
-        "SEQUENCE_TEMPLATE": dna_sequence
-    }
-
-    global_args = {
-        "PRIMER_TASK": "generic",
-        "PRIMER_PICK_LEFT_PRIMER": 1,
-        "PRIMER_PICK_INTERNAL_OLIGO": 0,
-        "PRIMER_PICK_RIGHT_PRIMER": 1,
-
-        "PRIMER_MIN_SIZE": min_size,
-        "PRIMER_OPT_SIZE": opt_size,
-        "PRIMER_MAX_SIZE": max_size,
-
-        "PRIMER_MIN_TM": min_tm,
-        "PRIMER_OPT_TM": opt_tm,
-        "PRIMER_MAX_TM": max_tm,
-
-        "PRIMER_MIN_GC": min_gc,
-        "PRIMER_MAX_GC": max_gc,
-
-        "PRIMER_PRODUCT_SIZE_RANGE": [
-            [min_product, max_product]
-        ],
-
-        "PRIMER_NUM_RETURN": 5
-    }
-
-    result = primer3.bindings.design_primers(
-        seq_args,
-        global_args
-    )
-
-    return result
+import urllib.parse
 
 
-# ---------------------------------------------------------
+# ============================================================
+# NCBI BLAST SETTINGS
+# ============================================================
+
+NCBI_EMAIL = "architaj94@gmail.com"
+NCBI_TOOL = "primer-design-app"
+
+
+# ============================================================
 # NCBI BLAST FUNCTION
-# ---------------------------------------------------------
+# ============================================================
 
 def submit_blast(primer_sequence):
 
@@ -213,9 +27,9 @@ def submit_blast(primer_sequence):
         "QUERY": primer_sequence,
         "SHORT_QUERY_ADJUST": "true",
         "HITLIST_SIZE": "10",
-        "FORMAT_TYPE": "Text",
-        "TOOL": "primer-design-app",
-        "EMAIL": "your_email@example.com"
+        "FORMAT_TYPE": "HTML",
+        "TOOL": NCBI_TOOL,
+        "EMAIL": NCBI_EMAIL
     }
 
     response = requests.post(
@@ -226,389 +40,595 @@ def submit_blast(primer_sequence):
 
     response.raise_for_status()
 
-    # Find BLAST Request ID
-    rid_match = re.search(
-        r"RID = ([A-Z0-9-]+)",
-        response.text
+    rid = None
+
+    for line in response.text.splitlines():
+
+        if "RID =" in line:
+
+            rid = line.split("=", 1)[1].strip()
+            break
+
+    return rid
+
+
+# ============================================================
+# STREAMLIT PAGE
+# ============================================================
+
+st.set_page_config(
+    page_title="Primer Designer",
+    page_icon="🧬",
+    layout="centered"
+)
+
+
+# ============================================================
+# TITLE
+# ============================================================
+
+st.title("🧬 Primer Designer")
+
+st.write(
+    "Design PCR primers from a DNA sequence using Primer3 "
+    "and check primer specificity using NCBI BLAST."
+)
+
+
+# ============================================================
+# DNA SEQUENCE
+# ============================================================
+
+st.subheader("1. Enter DNA Sequence")
+
+sequence = st.text_area(
+    "DNA sequence",
+    placeholder="Example: ATGCGTACGATCGATCGATCG...",
+    height=180
+)
+
+
+# ============================================================
+# PRIMER PARAMETERS
+# ============================================================
+
+st.subheader("2. Primer Parameters")
+
+col1, col2 = st.columns(2)
+
+
+with col1:
+
+    min_size = st.number_input(
+        "Minimum primer length",
+        min_value=15,
+        max_value=30,
+        value=18
     )
 
-    # Find estimated running time
-    rtoe_match = re.search(
-        r"RTOE = (\d+)",
-        response.text
+    optimal_size = st.number_input(
+        "Optimal primer length",
+        min_value=15,
+        max_value=30,
+        value=20
     )
 
-    if not rid_match:
-        return None, None
-
-    rid = rid_match.group(1)
-
-    rtoe = 10
-
-    if rtoe_match:
-        rtoe = int(rtoe_match.group(1))
-
-    return rid, rtoe
-
-
-# ---------------------------------------------------------
-# GET BLAST RESULT
-# ---------------------------------------------------------
-
-def get_blast_result(rid):
-
-    url = "https://blast.ncbi.nlm.nih.gov/Blast.cgi"
-
-    params = {
-        "CMD": "Get",
-        "RID": rid,
-        "FORMAT_TYPE": "Text"
-    }
-
-    for attempt in range(12):
-
-        response = requests.get(
-            url,
-            params=params,
-            timeout=30
-        )
-
-        response.raise_for_status()
-
-        text = response.text
-
-        if "Status=WAITING" in text:
-            time.sleep(5)
-            continue
-
-        if "Status=READY" in text:
-            return text
-
-        if "Status=FAILED" in text:
-            return "BLAST search failed."
-
-        # Sometimes the status line is not returned
-        if "BLASTN" in text or "Sequences producing significant alignments" in text:
-            return text
-
-        time.sleep(5)
-
-    return "BLAST is taking longer than expected. Please open the NCBI BLAST result link."
-
-
-# ---------------------------------------------------------
-# BLAST DISPLAY
-# ---------------------------------------------------------
-
-def show_blast(primer_name, primer_sequence):
-
-    st.write(f"**{primer_name}:** `{primer_sequence}`")
-
-    if st.button(
-        f"🔎 BLAST {primer_name}",
-        key=f"blast_{primer_name}"
-    ):
-
-        with st.spinner(
-            "Submitting primer sequence to NCBI BLAST..."
-        ):
-
-            try:
-
-                rid, rtoe = submit_blast(primer_sequence)
-
-                if not rid:
-
-                    st.error(
-                        "Could not obtain a BLAST Request ID."
-                    )
-
-                else:
-
-                    st.success(
-                        f"BLAST submitted successfully. Request ID: {rid}"
-                    )
-
-                    # NCBI BLAST result URL
-                    blast_link = (
-                        "https://blast.ncbi.nlm.nih.gov/Blast.cgi"
-                        f"?CMD=Get&RID={rid}"
-                    )
-
-                    st.markdown(
-                        f"[🌐 Open BLAST result on NCBI]({blast_link})"
-                    )
-
-                    # Wait before checking
-                    time.sleep(max(rtoe, 5))
-
-                    with st.spinner(
-                        "Waiting for BLAST results..."
-                    ):
-
-                        result = get_blast_result(rid)
-
-                    if result:
-
-                        st.subheader(
-                            f"BLAST Result — {primer_name}"
-                        )
-
-                        st.text_area(
-                            "NCBI BLAST output",
-                            result,
-                            height=400,
-                            key=f"result_{primer_name}"
-                        )
-
-            except requests.exceptions.RequestException as e:
-
-                st.error(
-                    "Unable to connect to NCBI BLAST. "
-                    "Please check your internet connection."
-                )
-
-                st.caption(str(e))
-
-            except Exception as e:
-
-                st.error(
-                    "An error occurred while running BLAST."
-                )
-
-                st.caption(str(e))
-
-
-# ---------------------------------------------------------
-# DESIGN BUTTON
-# ---------------------------------------------------------
-
-if st.button(
-    "🧬 Design Primers",
-    type="primary",
-    use_container_width=True
-):
-
-    if not clean_sequence:
-
-        st.error(
-            "Please enter a DNA sequence first."
-        )
-
-    elif set(clean_sequence) - set("ATGC"):
-
-        st.error(
-            "DNA sequence contains invalid characters."
-        )
-
-    elif len(clean_sequence) < 50:
-
-        st.error(
-            "Please enter a longer DNA sequence."
-        )
-
-    else:
-
-        with st.spinner(
-            "Designing primers using Primer3..."
-        ):
-
-            try:
-
-                results = design_primers(
-                    clean_sequence
-                )
-
-                left_primer = results.get(
-                    "PRIMER_LEFT_0_SEQUENCE"
-                )
-
-                right_primer = results.get(
-                    "PRIMER_RIGHT_0_SEQUENCE"
-                )
-
-                left_tm = results.get(
-                    "PRIMER_LEFT_0_TM"
-                )
-
-                right_tm = results.get(
-                    "PRIMER_RIGHT_0_TM"
-                )
-
-                left_gc = results.get(
-                    "PRIMER_LEFT_0_GC_PERCENT"
-                )
-
-                right_gc = results.get(
-                    "PRIMER_RIGHT_0_GC_PERCENT"
-                )
-
-                product_size = results.get(
-                    "PRIMER_PAIR_0_PRODUCT_SIZE"
-                )
-
-                # -------------------------------------------------
-                # RESULTS
-                # -------------------------------------------------
-
-                st.success(
-                    "Primer design completed successfully!"
-                )
-
-                st.subheader(
-                    "3. Designed Primer Pair"
-                )
-
-                if left_primer and right_primer:
-
-                    # Forward primer
-                    st.markdown(
-                        "### 🟢 Forward Primer"
-                    )
-
-                    st.code(
-                        left_primer,
-                        language="text"
-                    )
-
-                    col1, col2 = st.columns(2)
-
-                    with col1:
-                        st.metric(
-                            "Length",
-                            f"{len(left_primer)} bp"
-                        )
-
-                    with col2:
-                        st.metric(
-                            "Tm",
-                            f"{left_tm:.2f} °C"
-                        )
-
-                    st.write(
-                        f"GC Content: **{left_gc:.2f}%**"
-                    )
-
-                    st.divider()
-
-                    # Reverse primer
-                    st.markdown(
-                        "### 🔵 Reverse Primer"
-                    )
-
-                    st.code(
-                        right_primer,
-                        language="text"
-                    )
-
-                    col1, col2 = st.columns(2)
-
-                    with col1:
-                        st.metric(
-                            "Length",
-                            f"{len(right_primer)} bp"
-                        )
-
-                    with col2:
-                        st.metric(
-                            "Tm",
-                            f"{right_tm:.2f} °C"
-                        )
-
-                    st.write(
-                        f"GC Content: **{right_gc:.2f}%**"
-                    )
-
-                    st.divider()
-
-                    # Product size
-                    st.markdown(
-                        "### 🧪 PCR Product"
-                    )
-
-                    st.metric(
-                        "Expected Product Size",
-                        f"{product_size} bp"
-                    )
-
-                    st.divider()
-
-                    # -------------------------------------------------
-                    # BLAST SECTION
-                    # -------------------------------------------------
-
-                    st.subheader(
-                        "4. Primer Specificity — NCBI BLAST"
-                    )
-
-                    st.info(
-                        "Use BLAST to check whether the designed "
-                        "primer sequence matches unintended regions "
-                        "in nucleotide databases."
-                    )
-
-                    show_blast(
-                        "Forward Primer",
-                        left_primer
-                    )
-
-                    st.divider()
-
-                    show_blast(
-                        "Reverse Primer",
-                        right_primer
-
-                    )
-
-                else:
-
-                    st.warning(
-                        "Primer3 could not find a suitable primer pair "
-                        "with the selected parameters."
-                    )
-
-                    if results.get(
-                        "PRIMER_WARNING"
-                    ):
-
-                        st.write(
-                            results["PRIMER_WARNING"]
-                        )
-
-            except Exception as e:
-
-                st.error(
-                    "Primer design failed."
-                )
-
-                st.write(
-                    "Error:",
-                    str(e)
-                )
-
+    max_size = st.number_input(
+        "Maximum primer length",
+        min_value=15,
+        max_value=35,
+        value=25
+    )
+
+
+with col2:
+
+    min_tm = st.number_input(
+        "Minimum Tm (°C)",
+        min_value=40.0,
+        max_value=70.0,
+        value=57.0
+    )
+
+    optimal_tm = st.number_input(
+        "Optimal Tm (°C)",
+        min_value=40.0,
+        max_value=70.0,
+        value=60.0
+    )
+
+    max_tm = st.number_input(
+        "Maximum Tm (°C)",
+        min_value=40.0,
+        max_value=75.0,
+        value=63.0
+    )
+
+
+min_gc = st.number_input(
+    "Minimum GC (%)",
+    min_value=0.0,
+    max_value=100.0,
+    value=40.0
+)
+
+
+max_gc = st.number_input(
+    "Maximum GC (%)",
+    min_value=0.0,
+    max_value=100.0,
+    value=60.0
+)
+
+
+product_min = st.number_input(
+    "Minimum product size (bp)",
+    min_value=50,
+    max_value=5000,
+    value=100
+)
+
+
+product_max = st.number_input(
+    "Maximum product size (bp)",
+    min_value=100,
+    max_value=10000,
+    value=300
+)
 
 
 st.divider()
 
-st.subheader(
-    "ℹ️ About this Application"
-)
 
-st.write(
-    """
-    This application uses Primer3 for PCR primer design.
+# ============================================================
+# DESIGN PRIMERS BUTTON
+# ============================================================
 
-    **Main features:**
-    - DNA sequence validation
-    - Primer length optimization
-    - Melting temperature (Tm) control
-    - GC content control
-    - PCR product size selection
-    - Forward and reverse primer design
-    - NCBI BLAST-based primer specificity checking
-    """
-)
+if st.button("🔬 Design Primers", type="primary"):
+
+    clean_sequence = (
+        sequence.upper()
+        .replace(" ", "")
+        .replace("\n", "")
+        .replace("\r", "")
+    )
+
+
+    # --------------------------------------------------------
+    # VALIDATION
+    # --------------------------------------------------------
+
+    if not clean_sequence:
+
+        st.error(
+            "Please enter a DNA sequence."
+        )
+
+
+    elif any(
+        base not in "ATGC"
+        for base in clean_sequence
+    ):
+
+        st.error(
+            "Invalid DNA sequence. "
+            "Please use only A, T, G and C."
+        )
+
+
+    elif len(clean_sequence) < 50:
+
+        st.error(
+            "The DNA sequence is too short "
+            "for reliable primer design."
+        )
+
+
+    elif min_size > optimal_size or optimal_size > max_size:
+
+        st.error(
+            "Primer length settings are invalid. "
+            "Use Minimum ≤ Optimal ≤ Maximum."
+        )
+
+
+    elif min_tm > optimal_tm or optimal_tm > max_tm:
+
+        st.error(
+            "Tm settings are invalid. "
+            "Use Minimum ≤ Optimal ≤ Maximum."
+        )
+
+
+    elif min_gc > max_gc:
+
+        st.error(
+            "GC settings are invalid. "
+            "Minimum GC must be lower than Maximum GC."
+        )
+
+
+    elif product_min >= product_max:
+
+        st.error(
+            "Product size settings are invalid."
+        )
+
+
+    elif NCBI_EMAIL == "YOUR_EMAIL_HERE":
+
+        st.warning(
+            "Primer design will work, but before using "
+            "the BLAST feature, replace YOUR_EMAIL_HERE "
+            "in the code with your email address."
+        )
+
+
+    else:
+
+        # ----------------------------------------------------
+        # PRIMER3 SETTINGS
+        # ----------------------------------------------------
+
+        sequence_args = {
+
+            "SEQUENCE_ID": "target_sequence",
+
+            "SEQUENCE_TEMPLATE": clean_sequence
+
+        }
+
+
+        primer_args = {
+
+            "PRIMER_TASK": "generic",
+
+            "PRIMER_PICK_LEFT_PRIMER": 1,
+
+            "PRIMER_PICK_INTERNAL_OLIGO": 0,
+
+            "PRIMER_PICK_RIGHT_PRIMER": 1,
+
+            "PRIMER_OPT_SIZE": optimal_size,
+
+            "PRIMER_MIN_SIZE": min_size,
+
+            "PRIMER_MAX_SIZE": max_size,
+
+            "PRIMER_OPT_TM": optimal_tm,
+
+            "PRIMER_MIN_TM": min_tm,
+
+            "PRIMER_MAX_TM": max_tm,
+
+            "PRIMER_MIN_GC": min_gc,
+
+            "PRIMER_MAX_GC": max_gc,
+
+            "PRIMER_PRODUCT_SIZE_RANGE": [
+                [product_min, product_max]
+            ],
+
+            "PRIMER_NUM_RETURN": 5
+
+        }
+
+
+        # ----------------------------------------------------
+        # RUN PRIMER3
+        # ----------------------------------------------------
+
+        try:
+
+            results = primer3.bindings.design_primers(
+                sequence_args,
+                primer_args
+            )
+
+
+            number_of_pairs = results.get(
+                "PRIMER_PAIR_NUM_RETURNED",
+                0
+            )
+
+
+            if number_of_pairs == 0:
+
+                st.warning(
+                    "No suitable primer pair was found. "
+                    "Try relaxing the Tm, GC%, or product-size settings."
+                )
+
+
+            else:
+
+                st.success(
+                    f"Found {number_of_pairs} primer pair(s)."
+                )
+
+
+                # =================================================
+                # DISPLAY PRIMER PAIRS
+                # =================================================
+
+                for i in range(number_of_pairs):
+
+                    st.markdown(
+                        f"## 🧬 Primer Pair {i + 1}"
+                    )
+
+
+                    # ---------------------------------------------
+                    # GET FORWARD PRIMER
+                    # ---------------------------------------------
+
+                    forward = results.get(
+                        f"PRIMER_LEFT_{i}_SEQUENCE",
+                        "Not available"
+                    )
+
+
+                    reverse = results.get(
+                        f"PRIMER_RIGHT_{i}_SEQUENCE",
+                        "Not available"
+                    )
+
+
+                    forward_tm = results.get(
+                        f"PRIMER_LEFT_{i}_TM"
+                    )
+
+
+                    reverse_tm = results.get(
+                        f"PRIMER_RIGHT_{i}_TM"
+                    )
+
+
+                    forward_gc = results.get(
+                        f"PRIMER_LEFT_{i}_GC_PERCENT"
+                    )
+
+
+                    reverse_gc = results.get(
+                        f"PRIMER_RIGHT_{i}_GC_PERCENT"
+                    )
+
+
+                    product_size = results.get(
+                        f"PRIMER_PAIR_{i}_PRODUCT_SIZE",
+                        "Not available"
+                    )
+
+
+                    # ---------------------------------------------
+                    # DISPLAY PRIMERS
+                    # ---------------------------------------------
+
+                    col1, col2 = st.columns(2)
+
+
+                    with col1:
+
+                        st.markdown(
+                            "### Forward Primer"
+                        )
+
+                        st.code(forward)
+
+
+                        if isinstance(
+                            forward_tm,
+                            (int, float)
+                        ):
+
+                            st.write(
+                                f"**Tm:** {forward_tm:.2f} °C"
+                            )
+
+
+                        if isinstance(
+                            forward_gc,
+                            (int, float)
+                        ):
+
+                            st.write(
+                                f"**GC:** {forward_gc:.2f}%"
+                            )
+
+
+                        st.write(
+                            f"**Length:** {len(forward)} bp"
+                        )
+
+
+                    with col2:
+
+                        st.markdown(
+                            "### Reverse Primer"
+                        )
+
+                        st.code(reverse)
+
+
+                        if isinstance(
+                            reverse_tm,
+                            (int, float)
+                        ):
+
+                            st.write(
+                                f"**Tm:** {reverse_tm:.2f} °C"
+                            )
+
+
+                        if isinstance(
+                            reverse_gc,
+                            (int, float)
+                        ):
+
+                            st.write(
+                                f"**GC:** {reverse_gc:.2f}%"
+                            )
+
+
+                        st.write(
+                            f"**Length:** {len(reverse)} bp"
+                        )
+
+
+                    st.info(
+                        f"**Expected amplicon size:** "
+                        f"{product_size} bp"
+                    )
+
+
+                    # =================================================
+                    # BLAST SECTION
+                    # =================================================
+
+                    st.markdown(
+                        "### 🔎 Primer Specificity Analysis"
+                    )
+
+
+                    st.write(
+                        "Check the primer sequence against "
+                        "the NCBI nucleotide database using BLASTN."
+                    )
+
+
+                    blast_col1, blast_col2 = st.columns(2)
+
+
+                    # -------------------------------------------------
+                    # FORWARD BLAST
+                    # -------------------------------------------------
+
+                    with blast_col1:
+
+                        if st.button(
+                            "🔬 BLAST Forward Primer",
+                            key=f"blast_forward_{i}"
+                        ):
+
+                            with st.spinner(
+                                "Submitting forward primer to NCBI BLAST..."
+                            ):
+
+                                try:
+
+                                    rid = submit_blast(
+                                        forward
+                                    )
+
+
+                                    if rid:
+
+                                        blast_url = (
+                                            "https://blast.ncbi.nlm.nih.gov/"
+                                            "Blast.cgi?CMD=Get&RID="
+                                            + urllib.parse.quote(rid)
+                                        )
+
+
+                                        st.success(
+                                            "Forward primer submitted successfully!"
+                                        )
+
+
+                                        st.write(
+                                            f"**BLAST Request ID:** {rid}"
+                                        )
+
+
+                                        st.link_button(
+                                            "🌐 Open Forward BLAST Results",
+                                            blast_url
+                                        )
+
+
+                                    else:
+
+                                        st.error(
+                                            "NCBI did not return a BLAST Request ID."
+                                        )
+
+
+                                except Exception as error:
+
+                                    st.error(
+                                        f"BLAST submission failed: {error}"
+                                    )
+
+
+                    # -------------------------------------------------
+                    # REVERSE BLAST
+                    # -------------------------------------------------
+
+                    with blast_col2:
+
+                        if st.button(
+                            "🔬 BLAST Reverse Primer",
+                            key=f"blast_reverse_{i}"
+                        ):
+
+                            with st.spinner(
+                                "Submitting reverse primer to NCBI BLAST..."
+                            ):
+
+                                try:
+
+                                    rid = submit_blast(
+                                        reverse
+                                    )
+
+
+                                    if rid:
+
+                                        blast_url = (
+                                            "https://blast.ncbi.nlm.nih.gov/"
+                                            "Blast.cgi?CMD=Get&RID="
+                                            + urllib.parse.quote(rid)
+                                        )
+
+
+                                        st.success(
+                                            "Reverse primer submitted successfully!"
+                                        )
+
+
+                                        st.write(
+                                            f"**BLAST Request ID:** {rid}"
+                                        )
+
+
+                                        st.link_button(
+                                            "🌐 Open Reverse BLAST Results",
+                                            blast_url
+                                        )
+
+
+                                    else:
+
+                                        st.error(
+                                            "NCBI did not return a BLAST Request ID."
+                                        )
+
+
+                                except Exception as error:
+
+                                    st.error(
+                                        f"BLAST submission failed: {error}"
+                                    )
+
+
+                    st.divider()
+
+
+# ============================================================
+# FOOTER
+# ============================================================
 
 st.caption(
-    "Primer Designer — Academic Project"
+    "Primer design powered by Primer3 | "
+    "Specificity checking powered by NCBI BLAST"
 )
