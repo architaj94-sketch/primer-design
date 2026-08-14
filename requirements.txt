@@ -1,4 +1,4 @@
- streamlit as st
+ streamlit 
  primer3
  requests
 
